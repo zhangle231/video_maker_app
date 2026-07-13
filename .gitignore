@@ -1,0 +1,13 @@
+# 运行时配置（含个人路径）
+app_config.json
+
+# 用户上传图片
+uploads/
+
+# 生成的视频
+videos/
+
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
