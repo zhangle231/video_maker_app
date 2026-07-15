@@ -1,0 +1,125 @@
+{
+  "version": 1,
+  "tracks": [
+    {
+      "id": "warm_01",
+      "file": "music/warm/acoustic-sunset.wav",
+      "name": "Acoustic Sunset",
+      "artist": "Synthesized",
+      "tags": ["温馨", "治愈", "吉他", "旅行"],
+      "duration": 180,
+      "duration_str": "3:00",
+      "bpm": 80,
+      "source": "Synthesized (CC0)",
+      "license": "CC0"
+    },
+    {
+      "id": "warm_02",
+      "file": "music/warm/hopeful-journey.wav",
+      "name": "Hopeful Journey",
+      "artist": "Synthesized",
+      "tags": ["温馨", "钢琴", "治愈"],
+      "duration": 150,
+      "duration_str": "2:30",
+      "bpm": 75,
+      "source": "Synthesized (CC0)",
+      "license": "CC0"
+    },
+    {
+      "id": "epic_01",
+      "file": "music/epic/epic-inspiration.wav",
+      "name": "Epic Inspiration",
+      "artist": "Synthesized",
+      "tags": ["激昂", "史诗", "管弦", "宣传"],
+      "duration": 210,
+      "duration_str": "3:30",
+      "bpm": 95,
+      "source": "Synthesized (CC0)",
+      "license": "CC0"
+    },
+    {
+      "id": "epic_02",
+      "file": "music/epic/rising-up.wav",
+      "name": "Rising Up",
+      "artist": "Synthesized",
+      "tags": ["激昂", "电子", "进取"],
+      "duration": 165,
+      "duration_str": "2:45",
+      "bpm": 100,
+      "source": "Synthesized (CC0)",
+      "license": "CC0"
+    },
+    {
+      "id": "lively_01",
+      "file": "music/lively/happy-days.wav",
+      "name": "Happy Days",
+      "artist": "Synthesized",
+      "tags": ["轻快", "活泼", "儿童", "趣味"],
+      "duration": 135,
+      "duration_str": "2:15",
+      "bpm": 120,
+      "source": "Synthesized (CC0)",
+      "license": "CC0"
+    },
+    {
+      "id": "lively_02",
+      "file": "music/lively/upbeat-summer.wav",
+      "name": "Upbeat Summer",
+      "artist": "Synthesized",
+      "tags": ["轻快", "活泼", "流行", "夏日"],
+      "duration": 180,
+      "duration_str": "3:00",
+      "bpm": 110,
+      "source": "Synthesized (CC0)",
+      "license": "CC0"
+    },
+    {
+      "id": "calm_01",
+      "file": "music/calm/peaceful-morning.wav",
+      "name": "Peaceful Morning",
+      "artist": "Synthesized",
+      "tags": ["静谧", "舒缓", "钢琴", "冥想"],
+      "duration": 225,
+      "duration_str": "3:45",
+      "bpm": 60,
+      "source": "Synthesized (CC0)",
+      "license": "CC0"
+    },
+    {
+      "id": "calm_02",
+      "file": "music/calm/soft-ambient.wav",
+      "name": "Soft Ambient",
+      "artist": "Synthesized",
+      "tags": ["静谧", "舒缓", "电子", "氛围"],
+      "duration": 180,
+      "duration_str": "3:00",
+      "bpm": 55,
+      "source": "Synthesized (CC0)",
+      "license": "CC0"
+    },
+    {
+      "id": "tech_01",
+      "file": "music/tech/digital-future.wav",
+      "name": "Digital Future",
+      "artist": "Synthesized",
+      "tags": ["科技", "电子", "现代", "演示"],
+      "duration": 160,
+      "duration_str": "2:40",
+      "bpm": 128,
+      "source": "Synthesized (CC0)",
+      "license": "CC0"
+    },
+    {
+      "id": "tech_02",
+      "file": "music/tech/corporate-light.wav",
+      "name": "Corporate Light",
+      "artist": "Synthesized",
+      "tags": ["科技", "商务", "现代", "专业"],
+      "duration": 150,
+      "duration_str": "2:30",
+      "bpm": 105,
+      "source": "Synthesized (CC0)",
+      "license": "CC0"
+    }
+  ]
+}
