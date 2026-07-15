@@ -7,6 +7,8 @@ import os
 import json
 import shutil
 import uuid
+import asyncio
+import threading
 from pathlib import Path
 from datetime import datetime
 
@@ -17,8 +19,11 @@ import uvicorn
 
 from moviepy import (
     ImageClip,
+    AudioFileClip,
+    CompositeAudioClip,
     concatenate_videoclips,
     vfx,
+    afx,
 )
 from PIL import Image
 
@@ -28,10 +33,25 @@ UPLOAD_DIR = BASE_DIR / "uploads"
 OUTPUT_DIR = BASE_DIR / "videos"
 UPLOAD_DIR.mkdir(exist_ok=True)
 OUTPUT_DIR.mkdir(exist_ok=True)
+TTS_DIR = BASE_DIR / "tts"
+TEMP_TTS_DIR = BASE_DIR / "temp" / "tts"
+TTS_DIR.mkdir(exist_ok=True)
+TEMP_TTS_DIR.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(title="图片故事视频生成器")
 
 CONFIG_FILE = BASE_DIR / "app_config.json"
+
+# ── TTS 音色映射 ──────────────────────────────────────────
+TTS_VOICES = {
+    "gentle_female": "zh-CN-XiaoxiaoNeural",
+    "tvb_style":     "zh-CN-XiaoyiNeural",
+    "shaw_style":    "zh-CN-YunxiNeural",
+}
+
+# ── 批量生成进度管理 ──────────────────────────────────────
+_batch_progress = {}
+_progress_lock = threading.Lock()
 
 
 # ── HTML 前端 ──────────────────────────────────────────────
@@ -184,6 +204,34 @@ HTML_TEMPLATE = r"""
         text-align: center; padding: 60px 20px; color: var(--text2);
     }
     .empty-state .icon { font-size: 50px; margin-bottom: 10px; }
+
+    /* TTS & BGM Panel */
+    .tts-panel {
+        background: var(--card); border-radius: 10px; padding: 16px 20px;
+        display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+        margin-bottom: 20px; border: 1px solid var(--border);
+    }
+    .tts-panel h3 { width: 100%; font-size: 14px; margin-bottom: -4px; }
+    .tts-panel label { font-size: 12px; color: var(--text2); }
+    .tts-panel select, .tts-panel input[type=range], .tts-panel input[type=number] {
+        background: var(--bg); border: 1px solid var(--border);
+        border-radius: 4px; color: var(--text); font-size: 13px;
+    }
+    .tts-panel select { padding: 5px 8px; }
+    .tts-panel input[type=range] { width: 80px; }
+    .tts-panel input[type=number] { width: 60px; padding: 4px 6px; text-align: center; }
+    .tts-btn {
+        font-size: 11px; padding: 4px 8px; border-radius: 4px;
+        border: 1px solid var(--border); background: var(--bg);
+        color: var(--text); cursor: pointer; margin-left: 4px;
+    }
+    .tts-btn:hover { border-color: var(--accent); }
+    .tts-btn.generating { opacity: 0.5; cursor: wait; }
+    .tts-status { font-size: 11px; margin-left: 6px; }
+    .tts-status.ok { color: var(--success); }
+    .tts-status.err { color: var(--accent); }
+    .tts-status.pending { color: var(--text2); }
+
 </style>
 </head>
 <body>
@@ -274,6 +322,37 @@ HTML_TEMPLATE = r"""
         </div>
     </div>
 
+    
+    <!-- TTS & BGM 面板 -->
+    <div class="tts-panel" id="ttsPanel">
+        <h3>TTS 语音 & 背景音乐</h3>
+        <div>
+            <label><input type="checkbox" id="ttsEnabled" onchange="toggleTTSPanel()"> 启用语音</label>
+        </div>
+        <div>
+            <label>音色</label>
+            <select id="ttsStyle">
+                <option value="gentle_female">温柔女声 (Xiaoxiao)</option>
+                <option value="tvb_style">TVB 风格 (Xiaoyi)</option>
+                <option value="shaw_style">邵氏风格 (Yunxi)</option>
+            </select>
+        </div>
+        <div>
+            <label>语音音量</label>
+            <input type="range" id="voiceVolume" min="0" max="200" value="100" step="5" oninput="document.getElementById('voiceVolVal').textContent=this.value+'%'">
+            <span id="voiceVolVal" style="font-size:11px;color:var(--text2)">100%</span>
+        </div>
+        <div>
+            <label>BGM 音量</label>
+            <input type="range" id="musicVolume" min="0" max="200" value="30" step="5" oninput="document.getElementById('musicVolVal').textContent=this.value+'%'">
+            <span id="musicVolVal" style="font-size:11px;color:var(--text2)">30%</span>
+        </div>
+        <div>
+            <button class="btn btn-secondary" onclick="generateAllTTS()" id="btnGenAllTTS" disabled style="font-size:12px;padding:6px 14px;">批量生成语音</button>
+            <span id="ttsBatchStatus" style="font-size:11px;color:var(--text2);margin-left:6px;"></span>
+        </div>
+    </div>
+
     <!-- 按钮 -->
     <div class="btn-row">
         <button class="btn btn-primary" id="btnGenerate" onclick="generateVideo()" disabled>生成视频</button>
@@ -293,6 +372,9 @@ HTML_TEMPLATE = r"""
 </div>
 
 <script>
+// ── TTS 状态 ──
+let ttsSegments = {};  // {index: {segment_id, path, status}}
+
 // ── 状态 ──
 let slides = [];
 let viewSize = 'medium';
@@ -321,12 +403,35 @@ function renderSlides() {
                     <label>时长(秒)</label>
                     <input type="number" value="${s.duration}" min="1" max="30" step="0.5"
                         onchange="updateSlide(${i}, 'duration', parseFloat(this.value)||3)">
-                    <button class="del-btn" onclick="removeSlide(${i})" title="移除">✕</button>
+                    <button class="del-btn" onclick="removeSlide(${i})" title="移除">✕</button>                    <button class="tts-btn" onclick="event.stopPropagation();generateSlideTTS(${i})" id="ttsGenBtn_${i}">生成语音</button>                    <button class="tts-btn" onclick="event.stopPropagation();playSlideTTS(${i})" id="ttsPlayBtn_${i}" style="display:none;">试听</button>                    <span class="tts-status pending" id="ttsStatus_${i}"></span>
                 </div>
             </div>
         </div>
     `).join('');
     list.setAttribute('data-size', viewSize);
+list.setAttribute('data-size', viewSize);
+    // Restore TTS button states
+    setTimeout(() => {
+        for (let i = 0; i < slides.length; i++) {
+            const seg = ttsSegments[i];
+            if (seg) {
+                const statusEl = document.getElementById('ttsStatus_' + i);
+                const playBtn = document.getElementById('ttsPlayBtn_' + i);
+                const genBtn = document.getElementById('ttsGenBtn_' + i);
+                if (statusEl) {
+                    if (seg.status === 'ok') {
+                        statusEl.textContent = '已生成';
+                        statusEl.className = 'tts-status ok';
+                    } else {
+                        statusEl.textContent = '生成失败';
+                        statusEl.className = 'tts-status err';
+                    }
+                }
+                if (playBtn && seg.status === 'ok') playBtn.style.display = '';
+                if (genBtn && seg.status === 'ok') genBtn.style.display = 'none';
+            }
+        }
+    }, 100);
 }
 
 function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
@@ -508,6 +613,115 @@ function applySelectedSets() {
     document.getElementById('cfgStatus').textContent = `已选 ${selectedSetKeys.size} 组，共 ${newSlides.length} 张`;
 }
 
+// ── TTS 操作 ──
+function toggleTTSPanel() {
+    const on = document.getElementById('ttsEnabled').checked;
+    document.getElementById('ttsStyle').disabled = !on;
+    document.getElementById('voiceVolume').disabled = !on;
+    document.getElementById('btnGenAllTTS').disabled = !on;
+    if (!on) { ttsSegments = {}; renderSlides(); }
+}
+
+async function generateSlideTTS(idx) {
+    const slide = slides[idx];
+    if (!slide || !slide.text) return;
+    const style = document.getElementById('ttsStyle').value;
+    const segId = 'seg_' + Date.now().toString(36) + '_' + idx;
+    const genBtn = document.getElementById('ttsGenBtn_' + idx);
+    const statusEl = document.getElementById('ttsStatus_' + idx);
+    genBtn.disabled = true;
+    genBtn.classList.add('generating');
+    statusEl.textContent = '生成中...';
+    statusEl.className = 'tts-status pending';
+    try {
+        const resp = await fetch('/api/tts/generate', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({text: slide.text, style: style, segment_id: segId})
+        });
+        if (!resp.ok) { const e = await resp.json(); throw new Error(e.detail); }
+        const data = await resp.json();
+        ttsSegments[idx] = {segment_id: segId, path: data.path, status: 'ok', style: style};
+        statusEl.textContent = '已生成';
+        statusEl.className = 'tts-status ok';
+        document.getElementById('ttsPlayBtn_' + idx).style.display = '';
+    } catch(e) {
+        statusEl.textContent = '失败: ' + e.message;
+        statusEl.className = 'tts-status err';
+    } finally {
+        genBtn.disabled = false;
+        genBtn.classList.remove('generating');
+    }
+}
+
+function playSlideTTS(idx) {
+    const seg = ttsSegments[idx];
+    if (!seg || !seg.segment_id) return;
+    const audio = new Audio('/api/tts/audio/' + seg.segment_id);
+    audio.play();
+}
+
+async function generateAllTTS() {
+    if (slides.length === 0) return;
+    const style = document.getElementById('ttsStyle').value;
+    const segments = slides.map((s, i) => ({
+        text: s.text, style: style,
+        segment_id: ttsSegments[i]?.segment_id || ('seg_' + Date.now().toString(36) + '_' + i)
+    }));
+    const statusEl = document.getElementById('ttsBatchStatus');
+    const btn = document.getElementById('btnGenAllTTS');
+    btn.disabled = true;
+    statusEl.textContent = '提交中...';
+    try {
+        const resp = await fetch('/api/tts/generate-all', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({segments: segments})
+        });
+        if (!resp.ok) { const e = await resp.json(); throw new Error(e.detail); }
+        const data = await resp.json();
+        pollTTSProgress(data.batch_id, segments);
+    } catch(e) {
+        statusEl.textContent = '失败: ' + e.message;
+        btn.disabled = false;
+    }
+}
+
+async function pollTTSProgress(batchId, segments) {
+    const statusEl = document.getElementById('ttsBatchStatus');
+    const btn = document.getElementById('btnGenAllTTS');
+    const poll = async () => {
+        try {
+            const resp = await fetch('/api/tts/progress?batch_id=' + batchId);
+            if (!resp.ok) { setTimeout(poll, 2000); return; }
+            const data = await resp.json();
+            const total = data.total || 0;
+            const done = data.done || 0;
+            const failed = data.failed || 0;
+            statusEl.textContent = `${done+failed}/${total} (成功${done}, 失败${failed})`;
+            if (data.status === 'done') {
+                // Update ttsSegments with results
+                if (data.results) {
+                    for (const r of data.results) {
+                        const idx = segments.findIndex(s => s.segment_id === r.segment_id);
+                        if (idx >= 0) {
+                            ttsSegments[idx] = {
+                                segment_id: r.segment_id,
+                                path: r.path,
+                                status: r.ok ? 'ok' : 'err',
+                                style: segments[idx].style
+                            };
+                        }
+                    }
+                }
+                renderSlides();
+                btn.disabled = false;
+                return;
+            }
+            setTimeout(poll, 2000);
+        } catch(e) { statusEl.textContent = '查询失败'; btn.disabled = false; }
+    };
+    poll();
+}
+
 // ── 生成 ──
 async function generateVideo() {
     if (slides.length === 0) return;
@@ -557,6 +771,17 @@ async function generateVideo() {
     formData.append('fade_duration', document.getElementById('fadeDuration').value);
     formData.append('fps', document.getElementById('fps').value);
     formData.append('layout_mode', viewSize);
+formData.append('layout_mode', viewSize);
+    formData.append('tts_enabled', document.getElementById('ttsEnabled').checked ? 'true' : 'false');
+    formData.append('tts_style', document.getElementById('ttsStyle').value);
+    formData.append('voice_volume', (parseInt(document.getElementById('voiceVolume').value) || 100) / 100);
+    formData.append('music_volume', (parseInt(document.getElementById('musicVolume').value) || 30) / 100);
+    // Build tts_segment_ids array
+    const ttsIds = [];
+    for (let i = 0; i < slides.length; i++) {
+        ttsIds.push(ttsSegments[i]?.segment_id || '');
+    }
+    formData.append('tts_segment_ids', JSON.stringify(ttsIds));
 
     progressFill.style.width = '30%';
     progressText.textContent = '正在生成视频...';
@@ -613,8 +838,16 @@ async def generate_video(
     fade_duration: float = Form(0.3),
     fps: int = Form(24),
     layout_mode: str = Form("medium"),
+    tts_enabled: str = Form("false"),
+    tts_style: str = Form("gentle_female"),
+    tts_segment_ids: str = Form("[]"),
+    voice_volume: float = Form(1.0),
+    music_track: str = Form(""),
+    music_volume: float = Form(0.3),
 ):
     """接收图片和参数，生成视频"""
+    tts_enabled_bool = tts_enabled.lower() in ("true", "1", "yes")
+    tts_segment_ids_list = json.loads(tts_segment_ids)
     upload_texts_list = json.loads(texts)
     upload_durations_list = json.loads(durations)
     local_paths_list = json.loads(local_paths)
@@ -653,10 +886,26 @@ async def generate_video(
     output_path = OUTPUT_DIR / output_filename
 
     try:
+        # Pre-extend durations for voiceovers longer than image duration
+        compose_durations = list(all_durations)
+        if tts_enabled_bool and tts_segment_ids_list:
+            from moviepy import AudioFileClip as _AFC2
+            for i, seg_id in enumerate(tts_segment_ids_list):
+                if i >= len(compose_durations):
+                    break
+                tts_path = TTS_DIR / f"{seg_id}.mp3"
+                if tts_path.exists():
+                    try:
+                        tmp = _AFC2(str(tts_path))
+                        if tmp.duration > compose_durations[i]:
+                            compose_durations[i] = tmp.duration
+                        tmp.close()
+                    except Exception:
+                        pass
         _compose_video(
             image_paths=all_image_paths,
             texts=all_texts,
-            durations=all_durations,
+            durations=compose_durations,
             output_path=str(output_path),
             font_size=font_size,
             text_color=text_color,
@@ -664,6 +913,11 @@ async def generate_video(
             fade_duration=fade_duration,
             fps=fps,
             layout_mode=layout_mode,
+            tts_enabled=tts_enabled_bool,
+            tts_segment_ids=tts_segment_ids_list,
+            voice_volume=voice_volume,
+            music_track=music_track,
+            music_volume=music_volume,
         )
     except Exception as e:
         raise HTTPException(500, f"视频合成失败: {e}")
@@ -846,12 +1100,22 @@ def _compose_video(
     fade_duration: float = 0.3,
     fps: int = 24,
     layout_mode: str = "medium",
+    tts_enabled: bool = False,
+    tts_style: str = "gentle_female",
+    tts_segment_ids: list = None,
+    voice_volume: float = 1.0,
+    music_track: str = "",
+    music_volume: float = 0.3,
 ):
     """
-    核心合成逻辑。
-    - small/medium: 字幕叠加在图片底部
-    - large: 上下结构 —— 图片在上，字幕区在下，互不遮挡
+    Core composition logic. Supports TTS voiceover and background music.
+    - small/medium: subtitles overlaid at bottom of image
+    - large: vertical layout - image on top, subtitle area below
+    When tts_enabled=True, each segment's voice audio is added to the timeline.
+    When music_track is set, background music is mixed in.
     """
+    if tts_segment_ids is None:
+        tts_segment_ids = []
     import tempfile
 
     if len(durations) < len(image_paths):
@@ -885,7 +1149,56 @@ def _compose_video(
         clips.append(clip)
 
     final = concatenate_videoclips(clips, method="compose")
-    final.write_videofile(output_path, fps=fps, codec="libx264", audio=False, logger=None)
+
+    # ── 音频合成 ──
+    audio_clips = []
+
+    if tts_enabled and tts_segment_ids:
+        time_offset = 0.0
+        for i, seg_id in enumerate(tts_segment_ids):
+            dur = durations[i] if i < len(durations) else 3.0
+            tts_path = TTS_DIR / f"{seg_id}.mp3"
+            if tts_path.exists():
+                try:
+                    voice_clip = AudioFileClip(str(tts_path))
+                    voice_dur = voice_clip.duration
+                    if voice_dur > dur:
+                        # Voice longer than image - extend image duration
+                        dur = voice_dur
+                        # Note: we cannot retroactively change clip duration here;
+                        # this is handled by pre-extending durations before calling _compose_video
+                    voice_clip = voice_clip.with_effects([
+                        afx.MultiplyVolume(voice_volume)
+                    ]).with_start(time_offset)
+                    audio_clips.append(voice_clip)
+                except Exception as e:
+                    print(f"[compose] TTS audio load failed {seg_id}: {e}")
+            time_offset += dur
+
+    if music_track:
+        music_path = Path(music_track)
+        if music_path.exists():
+            try:
+                music_clip = AudioFileClip(str(music_path))
+                # Loop music to match video duration
+                final_duration = final.duration if hasattr(final, 'duration') else sum(durations)
+                from moviepy import afx as afx_mod
+                music_clip = music_clip.with_effects([
+                    afx_mod.MultiplyVolume(music_volume)
+                ])
+                if music_clip.duration < final_duration:
+                    music_clip = music_clip.loop(duration=final_duration)
+                else:
+                    music_clip = music_clip.subclipped(0, final_duration)
+                audio_clips.append(music_clip)
+            except Exception as e:
+                print(f"[compose] Music load failed: {e}")
+
+    if audio_clips:
+        mixed_audio = CompositeAudioClip(audio_clips)
+        final = final.with_audio(mixed_audio)
+
+    final.write_videofile(output_path, fps=fps, codec="libx264", audio_codec="aac", logger=None)
     final.close()
 
 
@@ -1055,6 +1368,110 @@ async def save_config(data: dict):
     CONFIG_FILE.write_text(json.dumps(existing, ensure_ascii=False, indent=2), encoding="utf-8")
     return {"ok": True}
 
+
+# ════════════════════════════════════════════════════════════
+# TTS 语音功能
+# ════════════════════════════════════════════════════════════
+
+async def _generate_tts_audio(text: str, voice_shortname: str, segment_id: str) -> str:
+    """Call edge-tts to generate audio, returns mp3 file path. Returns empty string on failure."""
+    import edge_tts
+    output_path = TTS_DIR / f"{segment_id}.mp3"
+    if output_path.exists():
+        return str(output_path)
+    communicate = edge_tts.Communicate(text, voice_shortname)
+    try:
+        await communicate.save(str(output_path))
+        return str(output_path)
+    except Exception as e:
+        print(f"[TTS] generate failed segment_id={segment_id}: {e}")
+        return ""
+
+
+@app.post("/api/tts/generate")
+async def tts_generate(req: Request):
+    body = await req.json()
+    text = body.get("text", "").strip()
+    style = body.get("style", "gentle_female")
+    segment_id = body.get("segment_id", "").strip()
+    if not text or not segment_id:
+        raise HTTPException(400, "text and segment_id required")
+    voice = TTS_VOICES.get(style, TTS_VOICES["gentle_female"])
+    path = await _generate_tts_audio(text, voice, segment_id)
+    if not path:
+        raise HTTPException(500, "TTS generate failed")
+    return JSONResponse({"segment_id": segment_id, "path": path, "size": os.path.getsize(path), "style": style})
+
+
+@app.post("/api/tts/generate-all")
+async def tts_generate_all(req: Request):
+    body = await req.json()
+    segments = body.get("segments", [])
+    if not segments:
+        raise HTTPException(400, "segments cannot be empty")
+    total = len(segments)
+    batch_id = uuid.uuid4().hex[:12]
+    with _progress_lock:
+        _batch_progress[batch_id] = {"total": total, "done": 0, "failed": 0}
+
+    def _run():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        results = []
+        for i, seg in enumerate(segments):
+            text = seg.get("text", "").strip()
+            style = seg.get("style", "gentle_female")
+            seg_id = seg.get("segment_id", f"seg_{i:03d}")
+            voice = TTS_VOICES.get(style, TTS_VOICES["gentle_female"])
+            try:
+                path = loop.run_until_complete(_generate_tts_audio(text, voice, seg_id))
+                if path:
+                    results.append({"segment_id": seg_id, "path": path, "ok": True})
+                    with _progress_lock:
+                        _batch_progress[batch_id]["done"] += 1
+                else:
+                    results.append({"segment_id": seg_id, "path": "", "ok": False})
+                    with _progress_lock:
+                        _batch_progress[batch_id]["failed"] += 1
+            except Exception as e:
+                results.append({"segment_id": seg_id, "path": "", "ok": False, "error": str(e)})
+                with _progress_lock:
+                    _batch_progress[batch_id]["failed"] += 1
+        loop.close()
+        with _progress_lock:
+            _batch_progress[batch_id]["status"] = "done"
+            _batch_progress[batch_id]["results"] = results
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    return JSONResponse({"batch_id": batch_id, "total": total})
+
+
+@app.get("/api/tts/progress")
+async def tts_progress(batch_id: str = ""):
+    if not batch_id:
+        raise HTTPException(400, "batch_id required")
+    with _progress_lock:
+        progress = _batch_progress.get(batch_id)
+    if progress is None:
+        raise HTTPException(404, "batch_id not found")
+    return JSONResponse(progress)
+
+
+@app.get("/api/tts/audio/{segment_id}")
+async def tts_get_audio(segment_id: str):
+    path = TTS_DIR / f"{segment_id}.mp3"
+    if not path.exists():
+        raise HTTPException(404, "audio file not found")
+    return FileResponse(str(path), media_type="audio/mpeg")
+
+
+@app.delete("/api/tts/audio/{segment_id}")
+async def tts_delete_audio(segment_id: str):
+    path = TTS_DIR / f"{segment_id}.mp3"
+    if not path.exists():
+        raise HTTPException(404, "audio file not found")
+    os.remove(path)
+    return {"ok": True}
 
 # ── 启动 ──
 if __name__ == "__main__":

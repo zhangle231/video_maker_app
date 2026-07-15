@@ -15,7 +15,7 @@ AIGC:
 
 > 项目：video_maker_app  
 > 版本：v2.0  
-> 状态：草稿，待评审  
+> 状态：已评审通过
 > 日期：2026-07-15
 
 ---
@@ -97,6 +97,7 @@ edge-tts
 |------|------|------|
 | POST | `/api/tts/generate` | 为单段旁白生成语音 |
 | POST | `/api/tts/generate-all` | 批量生成所有段的语音 |
+| GET | `/api/tts/progress` | 查询批量生成进度 |
 | GET | `/api/tts/audio/{segment_id}` | 返回已生成的语音文件供试听 |
 | DELETE | `/api/tts/audio/{segment_id}` | 删除某段语音（重新生成前清理） |
 
@@ -135,7 +136,8 @@ edge-tts
 #### 4.2.2 JS 函数
 
 - `generateTTS(segmentId)` — 调用 `/api/tts/generate`
-- `generateAllTTS()` — 调用 `/api/tts/generate-all`
+- `generateAllTTS()` — 调用 `/api/tts/generate-all`，触发后轮询进度
+- `pollTTSProgress()` — 轮询 `/api/tts/progress` 获取批量生成进度
 - `previewTTS(segmentId)` — 试听单段语音
 - `updateVoiceVolume()` / `updateBGMVolume()` — 音量调整
 
@@ -161,8 +163,8 @@ edge-tts
 
 ## 6. 待确认项
 
-- [ ] 3 种风格的 edge-tts ShortName 需实际测试验证效果，若不满意再调整
-- [ ] 批量生成语音时是否需要进度条（推荐：SSE 或轮询方式）
-- [ ] 生成的临时 TTS 音频是否在视频合成成功后自动清理
+- [x] ~~3 种风格的 edge-tts ShortName 需实际测试验证效果，若不满意再调整~~ → 开发时实测调优
+- [x] ~~批量生成语音时是否需要进度条~~ → 采用轮询方式
+- [x] ~~生成的临时 TTS 音频是否在视频合成成功后自动清理~~ → 保留不清理
 *（内容由AI生成，仅供参考）*
 *（内容由AI生成，仅供参考）*

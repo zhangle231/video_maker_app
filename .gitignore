@@ -7,6 +7,10 @@ uploads/
 # 生成的视频
 videos/
 
+# TTS 语音产物
+tts/
+temp/
+
 # Python 缓存
 __pycache__/
 *.pyc
