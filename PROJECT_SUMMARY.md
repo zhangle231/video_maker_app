@@ -206,4 +206,22 @@ pytest tests/test_tts_api.py -v
 # 全部测试
 python tests/run_all.py
 ```
+
+**代码提交**（PowerShell 脚本）：
+
+```powershell
+# 交互模式 — 列出变更后输入 message
+.\git_commit_push.ps1
+
+# 指定 message，执行前确认
+.\git_commit_push.ps1 -m "feat: xxx"
+
+# 全自动，跳过确认
+.\git_commit_push.ps1 -m "feat: xxx" -f
+
+# 推送到指定分支
+.\git_commit_push.ps1 -m "feat: xxx" -b main
+```
+
+脚本自动完成：远程可访问性检查 → 变更文件列表 → git add/commit/push → 本地与远程 HEAD 比对确认。
 *（内容由AI生成，仅供参考）*
