@@ -232,6 +232,56 @@ HTML_TEMPLATE = r"""
     .tts-status.err { color: var(--accent); }
     .tts-status.pending { color: var(--text2); }
 
+    /* ===== 短视频拼接模块 ===== */
+    .tab-bar { display: flex; gap: 0; border-bottom: 2px solid var(--border); margin-bottom: 20px; }
+    .tab { padding: 10px 24px; border: none; background: none; cursor: pointer; font-size: 15px;
+           color: var(--text2); border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all 0.2s; }
+    .tab.active { border-bottom-color: var(--accent); color: var(--accent); font-weight: 600; }
+    .tab:hover:not(.active) { color: var(--text); }
+
+    .clip-panel { display: none; }
+    .clip-panel.visible { display: block; }
+
+    .clip-upload-zone {
+        border: 2px dashed var(--border); border-radius: 12px; padding: 32px; text-align: center;
+        cursor: pointer; transition: border-color 0.2s, background 0.2s; margin-bottom: 16px;
+    }
+    .clip-upload-zone:hover { border-color: var(--accent); background: rgba(233,69,96,0.04); }
+    .clip-upload-zone .upload-icon { font-size: 36px; margin-bottom: 8px; }
+    .clip-upload-zone p { color: var(--text2); font-size: 13px; margin: 4px 0; }
+    .clip-upload-zone .hint { font-size: 11px; color: var(--text2); opacity: 0.7; }
+
+    .segment-list { display: flex; flex-direction: column; gap: 8px; margin: 16px 0; min-height: 60px; }
+    .segment-card {
+        display: flex; align-items: center; gap: 12px; padding: 10px 12px;
+        border: 1px solid var(--border); border-radius: 8px; background: var(--card);
+        cursor: grab; transition: box-shadow 0.2s, opacity 0.2s; user-select: none;
+    }
+    .segment-card.dragging { opacity: 0.4; }
+    .segment-card.drag-over { box-shadow: 0 0 0 2px var(--accent); }
+    .segment-card.error-card { border-color: #e74c3c; background: rgba(231,76,60,0.08); }
+    .segment-card .thumb { width: 80px; height: 45px; object-fit: cover; border-radius: 4px; flex-shrink: 0; background: var(--bg); }
+    .segment-card .info { flex: 1; min-width: 0; }
+    .segment-card .info .name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .segment-card .info .meta { font-size: 11px; color: var(--text2); margin-top: 2px; }
+    .segment-card .drag-handle { color: var(--text2); font-size: 18px; cursor: grab; flex-shrink: 0; }
+    .segment-card .status-badge { font-size: 10px; padding: 2px 8px; border-radius: 10px; flex-shrink: 0; }
+    .segment-card .status-badge.error { background: rgba(231,76,60,0.2); color: #e74c3c; }
+
+    .clip-actions { display: flex; align-items: center; gap: 12px; margin-top: 16px; }
+    .clip-actions .count { font-size: 12px; color: var(--text2); }
+    .clip-actions .count strong { color: var(--accent); }
+
+    .clip-result { margin-top: 24px; padding: 16px; border: 1px solid var(--border); border-radius: 12px;
+                    background: var(--card); display: none; }
+    .clip-result.show { display: block; }
+    .clip-result video { width: 100%; max-height: 400px; border-radius: 6px; margin-bottom: 12px; background: #000; }
+    .clip-result .info { font-size: 12px; color: var(--text2); }
+
+    .placeholder-hint { text-align: center; padding: 40px 20px; color: var(--text2); font-size: 13px; }
+
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
 </style>
 </head>
 <body>
@@ -240,6 +290,13 @@ HTML_TEMPLATE = r"""
     <span class="badge">BETA</span>
     <span style="font-size:10px;color:var(--text2);margin-left:auto;">v20260713-1700</span>
 </div>
+
+<div class="tab-bar">
+    <button class="tab active" data-tab="story">图片故事</button>
+    <button class="tab" data-tab="clip">短视频拼接</button>
+</div>
+
+<div class="tab-panel story-panel" id="storyPanel">
 
 <div class="container">
     <!-- 加载 Prompt 配置 -->
@@ -368,6 +425,32 @@ HTML_TEMPLATE = r"""
     <!-- 结果 -->
     <div class="result-wrap" id="resultWrap">
         <div class="result-card" id="resultCard"></div>
+    </div>
+</div>
+</div>
+
+<!-- ═══════════════ 短视频拼接面板 ═══════════════ -->
+<div class="tab-panel clip-panel" id="clipPanel">
+    <div class="clip-upload-zone" id="clipDropZone">
+        <div class="upload-icon">🎬</div>
+        <p>拖拽或点击上传短视频</p>
+        <p class="hint">支持 mp4 / mov / avi / webm / mkv，单个时长不超过 6 秒</p>
+        <input type="file" id="clipFileInput" accept="video/*" multiple hidden>
+    </div>
+
+    <div class="placeholder-hint" id="clipPlaceholder">还没有上传视频片段</div>
+    <div class="segment-list" id="segmentList" style="display:none;"></div>
+
+    <div class="clip-actions" id="clipActions" style="display:none;">
+        <span class="count">有效片段 <strong id="validCount">0</strong> 个</span>
+        <button class="btn" id="btnCompose" disabled onclick="composeClip()">合成视频</button>
+        <button class="btn btn-secondary" onclick="clearClips()">清空全部</button>
+    </div>
+
+    <div class="clip-result" id="clipResult">
+        <video id="clipVideo" controls></video>
+        <div class="info" id="clipResultInfo"></div>
+        <a class="btn btn-secondary" id="clipDownloadLink" download style="display:inline-block;margin-top:8px;text-decoration:none;">下载视频</a>
     </div>
 </div>
 
@@ -812,6 +895,218 @@ formData.append('layout_mode', viewSize);
     } finally {
         btn.disabled = false;
     }
+}
+
+// ═══════════════════ 短视频拼接模块 ═══════════════════
+let clipState = {
+    clipId: null,
+    segments: [],
+    composing: false,
+    result: null
+};
+
+// ── 标签切换 ──
+document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        const target = tab.dataset.tab;
+        document.getElementById('storyPanel').style.display = target === 'story' ? 'block' : 'none';
+        document.getElementById('clipPanel').style.display = target === 'clip' ? 'block' : 'none';
+    });
+});
+
+// ── 上传区域 ──
+const dropZone = document.getElementById('clipDropZone');
+const fileInput = document.getElementById('clipFileInput');
+
+dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.style.borderColor = 'var(--accent)'; });
+dropZone.addEventListener('dragleave', () => { dropZone.style.borderColor = ''; });
+dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.style.borderColor = '';
+    const files = e.dataTransfer.files;
+    if (files.length) handleClipUpload(files);
+});
+fileInput.addEventListener('change', () => {
+    if (fileInput.files.length) handleClipUpload(fileInput.files);
+    fileInput.value = '';
+});
+
+// ── 上传处理 ──
+async function handleClipUpload(files) {
+    const formData = new FormData();
+    for (const f of files) formData.append('files', f);
+
+    document.getElementById('clipPlaceholder').textContent = '正在上传...';
+    try {
+        const resp = await fetch('/api/clip/upload', { method: 'POST', body: formData });
+        const data = await resp.json();
+        clipState.clipId = data.clip_id;
+        clipState.segments = data.segments;
+        clipState.result = null;
+        renderSegments();
+    } catch (e) {
+        document.getElementById('clipPlaceholder').textContent = '上传失败: ' + e.message;
+    }
+}
+
+// ── 渲染片段列表 ──
+function renderSegments() {
+    const list = document.getElementById('segmentList');
+    const placeholder = document.getElementById('clipPlaceholder');
+    const actions = document.getElementById('clipActions');
+
+    if (clipState.segments.length === 0) {
+        list.style.display = 'none';
+        actions.style.display = 'none';
+        placeholder.style.display = 'block';
+        placeholder.textContent = '还没有上传视频片段';
+        return;
+    }
+
+    placeholder.style.display = 'none';
+    list.style.display = 'flex';
+    list.innerHTML = '';
+
+    const validCount = clipState.segments.filter(s => s.status === 'ok').length;
+    document.getElementById('validCount').textContent = validCount;
+    document.getElementById('btnCompose').disabled = validCount === 0;
+    actions.style.display = 'flex';
+
+    clipState.segments.forEach((seg, index) => {
+        const card = document.createElement('div');
+        card.className = 'segment-card' + (seg.status !== 'ok' ? ' error-card' : '');
+        card.draggable = seg.status === 'ok';
+        card.dataset.index = index;
+
+        const thumbHtml = seg.thumbnail
+            ? `<img class="thumb" src="${seg.thumbnail}" alt="">`
+            : `<div class="thumb" style="background:var(--bg);display:flex;align-items:center;justify-content:center;color:var(--text2);font-size:20px;">🎞</div>`;
+
+        const statusHtml = seg.status === 'too_long'
+            ? '<span class="status-badge error">超6秒</span>'
+            : seg.status === 'error'
+                ? '<span class="status-badge error">错误</span>'
+                : '';
+
+        card.innerHTML = `
+            ${thumbHtml}
+            <div class="info">
+                <div class="name">${escapeHtml(seg.filename)}</div>
+                <div class="meta">${seg.duration.toFixed(1)}s · ${seg.width}x${seg.height}${seg.status !== 'ok' ? ' · ' + (seg.error_msg || '') : ''}</div>
+            </div>
+            ${statusHtml}
+            ${seg.status === 'ok' ? '<div class="drag-handle">⠿</div>' : ''}
+        `;
+
+        if (seg.status === 'ok') {
+            card.addEventListener('dragstart', handleDragStart);
+            card.addEventListener('dragend', handleDragEnd);
+        }
+        card.addEventListener('dragover', handleDragOver);
+        card.addEventListener('drop', handleDrop);
+
+        list.appendChild(card);
+    });
+}
+
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+// ── 拖拽排序 ──
+let dragIndex = null;
+
+function handleDragStart(e) {
+    dragIndex = parseInt(this.dataset.index);
+    this.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+}
+
+function handleDragEnd(e) {
+    this.classList.remove('dragging');
+    document.querySelectorAll('.segment-card').forEach(c => c.classList.remove('drag-over'));
+    dragIndex = null;
+}
+
+function handleDragOver(e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    this.classList.add('drag-over');
+}
+
+function handleDrop(e) {
+    e.preventDefault();
+    this.classList.remove('drag-over');
+    if (dragIndex === null) return;
+
+    const dropIndex = parseInt(this.dataset.index);
+    if (dragIndex === dropIndex) return;
+
+    const seg = clipState.segments[dragIndex];
+    const target = clipState.segments[dropIndex];
+    if (seg.status !== 'ok' || target.status !== 'ok') return;
+
+    clipState.segments.splice(dragIndex, 1);
+    clipState.segments.splice(dropIndex, 0, seg);
+    renderSegments();
+}
+
+// ── 合成 ──
+async function composeClip() {
+    if (clipState.composing) return;
+    clipState.composing = true;
+    const btn = document.getElementById('btnCompose');
+    btn.disabled = true;
+    btn.textContent = '合成中...';
+
+    const validOrder = clipState.segments
+        .filter(s => s.status === 'ok')
+        .map(s => s.id);
+
+    try {
+        const resp = await fetch('/api/clip/compose', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ clip_id: clipState.clipId, segment_order: validOrder })
+        });
+        if (!resp.ok) {
+            const err = await resp.json();
+            throw new Error(err.detail || '合成失败');
+        }
+        const data = await resp.json();
+        clipState.result = data;
+        showResult();
+    } catch (e) {
+        alert('合成失败: ' + e.message);
+    } finally {
+        clipState.composing = false;
+        btn.disabled = false;
+        btn.textContent = '合成视频';
+    }
+}
+
+function showResult() {
+    const result = document.getElementById('clipResult');
+    const video = document.getElementById('clipVideo');
+    const info = document.getElementById('clipResultInfo');
+    const link = document.getElementById('clipDownloadLink');
+
+    video.src = clipState.result.download_url;
+    info.textContent = `文件: ${clipState.result.filename} · 时长: ${clipState.result.duration}s · ${clipState.result.width}x${clipState.result.height}`;
+    link.href = clipState.result.download_url;
+    link.download = clipState.result.filename;
+    result.classList.add('show');
+}
+
+function clearClips() {
+    clipState = { clipId: null, segments: [], composing: false, result: null };
+    renderSegments();
+    document.getElementById('clipResult').classList.remove('show');
 }
 </script>
 </body>
@@ -1472,6 +1767,306 @@ async def tts_delete_audio(segment_id: str):
         raise HTTPException(404, "audio file not found")
     os.remove(path)
     return {"ok": True}
+
+# ═══════════════════════════════════════════════════════════
+# 短视频拼接模块
+# ═══════════════════════════════════════════════════════════
+
+MAX_CLIP_DURATION = 6.0  # 秒
+CLIP_UPLOAD_DIR = BASE_DIR / "uploads" / "clips"
+CLIP_OUTPUT_DIR = OUTPUT_DIR
+CLIP_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+_clip_sessions: dict[str, dict] = {}
+
+
+def _get_clip_metadata(file_path: str) -> dict:
+    """读取视频元数据，失败返回 error 状态"""
+    try:
+        from moviepy import VideoFileClip
+        clip = VideoFileClip(file_path)
+        duration = clip.duration
+        width = clip.w
+        height = clip.h
+        fps = clip.fps if clip.fps else 30.0
+        clip.close()
+        return {
+            "duration": round(duration, 2),
+            "width": width,
+            "height": height,
+            "fps": round(fps, 2),
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def _generate_thumbnail(video_path: str, thumb_path: str, width: int = 160) -> bool:
+    """提取视频首帧缩略图"""
+    try:
+        from moviepy import VideoFileClip
+        clip = VideoFileClip(video_path)
+        frame = clip.get_frame(0)  # numpy array (H, W, 3)
+        clip.close()
+        img = Image.fromarray(frame)
+        h = int(img.height * width / img.width)
+        img = img.resize((width, h), Image.LANCZOS)
+        img.save(thumb_path, "JPEG", quality=80)
+        return True
+    except Exception:
+        return False
+
+
+@app.post("/api/clip/upload")
+async def clip_upload(files: list[UploadFile] = File(default=[])):
+    """上传短视频片段"""
+    if not files:
+        raise HTTPException(400, "请至少上传一个视频文件")
+
+    clip_id = uuid.uuid4().hex[:12]
+    session_dir = CLIP_UPLOAD_DIR / clip_id
+    session_dir.mkdir(parents=True, exist_ok=True)
+
+    segments = []
+    errors = []
+
+    ALLOWED_EXT = {".mp4", ".mov", ".avi", ".webm", ".mkv"}
+
+    for idx, file in enumerate(files):
+        ext = Path(file.filename).suffix.lower()
+        seg_id = f"seg_{idx}"
+
+        if ext not in ALLOWED_EXT:
+            segments.append({
+                "id": seg_id,
+                "filename": file.filename,
+                "duration": 0, "width": 0, "height": 0, "fps": 0,
+                "thumbnail": "",
+                "status": "error",
+                "error_msg": f"不支持的视频格式（{ext}），请上传 mp4/mov/avi/webm/mkv",
+            })
+            errors.append(f"{file.filename}: 不支持的视频格式")
+            continue
+
+        saved_name = f"{seg_id}{ext}"
+        saved_path = session_dir / saved_name
+        try:
+            content = await file.read()
+            saved_path.write_bytes(content)
+        except Exception as e:
+            segments.append({
+                "id": seg_id,
+                "filename": file.filename,
+                "duration": 0, "width": 0, "height": 0, "fps": 0,
+                "thumbnail": "",
+                "status": "error",
+                "error_msg": f"文件保存失败: {e}",
+            })
+            errors.append(f"{file.filename}: 保存失败")
+            continue
+
+        meta = _get_clip_metadata(str(saved_path))
+        if "error" in meta:
+            segments.append({
+                "id": seg_id,
+                "filename": file.filename,
+                "duration": 0, "width": 0, "height": 0, "fps": 0,
+                "thumbnail": "",
+                "status": "error",
+                "error_msg": f"无法读取视频文件，请检查文件是否损坏: {meta['error']}",
+            })
+            errors.append(f"{file.filename}: 无法读取视频")
+            continue
+
+        duration = meta["duration"]
+        if duration > MAX_CLIP_DURATION:
+            segments.append({
+                "id": seg_id,
+                "filename": file.filename,
+                "duration": duration,
+                "width": meta["width"], "height": meta["height"], "fps": meta["fps"],
+                "thumbnail": "",
+                "status": "too_long",
+                "error_msg": f"视频时长 {duration}s，超过 {MAX_CLIP_DURATION}s 限制",
+            })
+            errors.append(f"{file.filename}: 视频时长 {duration}s，超过 {MAX_CLIP_DURATION}s 限制")
+            continue
+
+        # 生成缩略图
+        thumb_name = f"thumb_{seg_id}.jpg"
+        thumb_path = session_dir / thumb_name
+        thumb_ok = _generate_thumbnail(str(saved_path), str(thumb_path))
+        thumbnail_url = f"/api/clip/thumbnail/{clip_id}/{thumb_name}" if thumb_ok else ""
+
+        segments.append({
+            "id": seg_id,
+            "filename": file.filename,
+            "duration": duration,
+            "width": meta["width"],
+            "height": meta["height"],
+            "fps": meta["fps"],
+            "thumbnail": thumbnail_url,
+            "status": "ok",
+            "error_msg": None,
+        })
+
+    # 保存 session
+    seg_order = [s["id"] for s in segments if s["status"] == "ok"]
+    _clip_sessions[clip_id] = {
+        "segments": segments,
+        "segment_order": seg_order,
+        "created_at": datetime.now().isoformat(),
+    }
+
+    return JSONResponse({
+        "clip_id": clip_id,
+        "segments": segments,
+        "errors": errors,
+    })
+
+
+@app.post("/api/clip/compose")
+async def clip_compose(request: Request):
+    """拼接短视频"""
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, "请求体必须是 JSON")
+
+    clip_id = body.get("clip_id", "")
+    segment_order = body.get("segment_order")
+
+    if clip_id not in _clip_sessions:
+        raise HTTPException(404, "会话不存在或已过期")
+
+    session = _clip_sessions[clip_id]
+    all_segments = session["segments"]
+
+    # 构建有效片段索引
+    valid_map = {}
+    for s in all_segments:
+        if s["status"] == "ok":
+            valid_map[s["id"]] = s
+
+    if not valid_map:
+        raise HTTPException(400, "没有有效的视频片段可供合成，请检查上传的视频")
+
+    # 确定顺序
+    if segment_order:
+        ordered_ids = [sid for sid in segment_order if sid in valid_map]
+    else:
+        ordered_ids = session.get("segment_order", list(valid_map.keys()))
+
+    if not ordered_ids:
+        ordered_ids = list(valid_map.keys())
+
+    # 加载视频片段
+    clips = []
+    first_clip = None
+    session_dir = CLIP_UPLOAD_DIR / clip_id
+
+    for seg_id in ordered_ids:
+        seg = valid_map[seg_id]
+        # 查找实际文件
+        for ext in [".mp4", ".mov", ".avi", ".webm", ".mkv"]:
+            candidate = session_dir / f"{seg_id}{ext}"
+            if candidate.exists():
+                break
+        else:
+            continue  # 文件不存在，跳过
+
+        try:
+            from moviepy import VideoFileClip
+            vclip = VideoFileClip(str(candidate))
+            clips.append(vclip)
+            if first_clip is None:
+                first_clip = vclip
+        except Exception:
+            continue
+
+    if not clips:
+        raise HTTPException(400, "没有有效的视频片段可供合成")
+
+    # 拼接
+    try:
+        final = concatenate_videoclips(clips, method="compose")
+    except Exception as e:
+        for c in clips:
+            try:
+                c.close()
+            except Exception:
+                pass
+        raise HTTPException(500, f"视频拼接失败: {e}")
+
+    # 输出
+    output_name = f"clip_output_{uuid.uuid4().hex[:8]}.mp4"
+    output_path = CLIP_OUTPUT_DIR / output_name
+
+    try:
+        final.write_videofile(
+            str(output_path),
+            codec="libx264",
+            audio_codec="aac",
+            preset="medium",
+            bitrate="5000k",
+            logger=None,
+        )
+    except Exception as e:
+        final.close()
+        for c in clips:
+            try:
+                c.close()
+            except Exception:
+                pass
+        raise HTTPException(500, f"视频编码失败: {e}")
+
+    duration = round(final.duration, 2)
+    width = final.w
+    height = final.h
+    fps = round(final.fps, 2) if final.fps else 30.0
+
+    final.close()
+    for c in clips:
+        try:
+            c.close()
+        except Exception:
+            pass
+
+    session["output"] = {
+        "filename": output_name,
+        "duration": duration,
+        "width": width,
+        "height": height,
+        "fps": fps,
+    }
+
+    return JSONResponse({
+        "status": "completed",
+        "filename": output_name,
+        "duration": duration,
+        "width": width,
+        "height": height,
+        "fps": fps,
+        "download_url": f"/api/clip/download/{output_name}",
+    })
+
+
+@app.get("/api/clip/download/{filename}")
+async def clip_download(filename: str):
+    """下载拼接后的视频"""
+    file_path = CLIP_OUTPUT_DIR / filename
+    if not file_path.exists():
+        raise HTTPException(404, "文件不存在")
+    return FileResponse(str(file_path), media_type="video/mp4", filename=filename)
+
+
+@app.get("/api/clip/thumbnail/{clip_id}/{filename}")
+async def clip_thumbnail(clip_id: str, filename: str):
+    """获取视频首帧缩略图"""
+    thumb_path = CLIP_UPLOAD_DIR / clip_id / filename
+    if not thumb_path.exists():
+        raise HTTPException(404, "缩略图不存在")
+    return FileResponse(str(thumb_path), media_type="image/jpeg")
+
 
 # ── 启动 ──
 if __name__ == "__main__":
