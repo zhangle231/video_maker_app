@@ -7,6 +7,7 @@ AIGC:
     ContentPropagator: 001191440300708461136T1XGW3
     PropagateID: f4ff5be3e1f50ff475cd88e8c986c75f_427e508980c911f188a8525400826444
     ReservedCode2: fPmKBicnIe3xgRVOO5RJXyD/l3wxwVhTZTM4Nvv6Dbz5Er756OxadJTNCPj5eG2U3+vg5G7vleHue1+gtashS5gqy4T35VL4vqz26UgwfJy5eE5fOiYsai2Qi5QC0Iea0fCbbfDe2HOJFz6HeZ48ZHXWij8OacUL3anmmjNmiIe7SX/aHCJ+e1nh2AU=
+Status: 已评审通过
 ---
 
 # Video Clip 拼接模块 详细设计
